@@ -51,6 +51,8 @@
   }
   .search .meta { display: flex; justify-content: space-between; margin-top: 8px; color: var(--muted); font-size: 12px; }
   .search .meta button { border: 0; background: none; color: var(--accent); cursor: pointer; font: inherit; padding: 0; }
+  .search .meta button:disabled { color: var(--muted); cursor: default; }
+  .meta-actions { display: flex; gap: 12px; }
   #stock-list { list-style: none; margin: 0; padding: 4px 0; overflow-y: auto; flex: 1; }
   #stock-list label {
     display: grid; grid-template-columns: auto 1fr auto; gap: 2px 10px; align-items: center;
@@ -78,8 +80,6 @@
   .legend b { color: var(--text); font-weight: 500; margin-right: 10px; }
   .chart { height: 380px; }
   #charts { display: flex; flex-direction: column; gap: 16px; }
-  .bal { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); font-size: 12px; }
-  .bal input { width: 84px; }
   input[type="number"], select {
     padding: 5px 7px; border: 1px solid var(--border); border-radius: 6px;
     background: var(--bg); color: var(--text); font: inherit; font-size: 13px;
@@ -99,7 +99,34 @@
   table.results th, table.results td { padding: 6px 14px; text-align: right; white-space: nowrap; border-top: 1px solid var(--grid); }
   table.results th { color: var(--muted); font-weight: 500; font-size: 12px; }
   table.results th:first-child, table.results td:first-child { text-align: left; }
-  table.results tfoot td { font-weight: 650; border-top: 1px solid var(--border); }
+  table.results tr.grand td { font-weight: 650; }
+  table.results tbody.totals tr:last-child td { border-bottom: 1px solid var(--border); }
+  .view-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: -4px; }
+  .view-tabs [role="tab"] {
+    border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; background: none; color: var(--muted);
+    padding: 8px 14px; font: inherit; font-size: 15px; font-weight: 650; cursor: pointer;
+  }
+  .view-tabs [role="tab"]:hover { color: var(--text); }
+  .view-tabs [role="tab"][aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); }
+  [role="tabpanel"][hidden] { display: none; }
+  .balances { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 8px 16px; padding: 0 14px 12px; }
+  .balances label { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+  .balances .name { flex: 1; }
+  .balances input { width: 100px; }
+  .balances-head { display: flex; align-items: baseline; gap: 10px; padding: 4px 14px 8px; border-top: 1px solid var(--grid); }
+  .balances-head h2 { font-size: 13px; margin: 8px 0 0; font-weight: 650; }
+  .balances-head span { color: var(--muted); font-size: 12px; }
+  .tabs { display: flex; gap: 4px; padding: 0 14px; border-bottom: 1px solid var(--border); }
+  .tabs [role="tab"] {
+    border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; background: none; color: var(--muted);
+    padding: 8px 12px; font: inherit; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+  }
+  .tabs [role="tab"]:hover { color: var(--text); }
+  .tabs [role="tab"][aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab-count { font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 10px; background: var(--bg); color: var(--muted); }
+  [aria-selected="true"] .tab-count { background: var(--accent-soft); color: var(--accent); }
+  table.results tr.subtotal td { font-weight: 600; background: var(--accent-soft); }
+  table.results tr.empty-row td { color: var(--muted); font-style: italic; }
   .pos { color: var(--up); } .neg { color: var(--down); }
   .sim-result { padding: 6px 14px 8px; border-top: 1px solid var(--grid); font-size: 13px; font-variant-numeric: tabular-nums; }
   .sim-result .stats { display: flex; gap: 6px 16px; flex-wrap: wrap; color: var(--muted); }
@@ -135,11 +162,25 @@
   <aside>
     <div class="search">
       <input id="search" type="search" placeholder="Search company, symbol or sector" autocomplete="off">
-      <div class="meta"><span id="count"></span><button id="clear" type="button">Clear selection</button></div>
+      <div class="meta">
+        <span id="count"></span>
+        <span class="meta-actions">
+          <button id="select-all" type="button">Select all</button>
+          <button id="clear" type="button">Clear selection</button>
+        </span>
+      </div>
     </div>
     <ul id="stock-list"></ul>
   </aside>
   <main>
+    <div class="view-tabs" role="tablist" aria-label="View">
+      <button type="button" role="tab" id="view-tab-charts" aria-controls="view-charts" data-view="charts">Stock graphs</button>
+      <button type="button" role="tab" id="view-tab-sim" aria-controls="view-sim" data-view="sim">Trading simulator</button>
+    </div>
+    <div id="view-charts" role="tabpanel" aria-labelledby="view-tab-charts">
+      <div id="charts"></div>
+    </div>
+    <div id="view-sim" role="tabpanel" aria-labelledby="view-tab-sim" hidden>
     <section class="card" aria-labelledby="sim-title">
       <div class="card-head">
         <span class="title" id="sim-title">Trading simulator</span>
@@ -160,15 +201,20 @@
         </label>
         <label class="check"><input id="sim-duty" type="checkbox" checked>0.5% stamp duty on buys</label>
       </form>
+      <div class="balances-head">
+        <h2>Starting balances</h2>
+        <span>one per selected stock; changing the default updates any you haven't edited</span>
+      </div>
+      <div id="sim-balances" class="balances"></div>
       <div class="sim-actions">
         <button class="btn primary" id="sim-run" type="submit" form="sim-form">Run simulation</button>
         <button class="btn" id="sim-clear" type="button">Clear results</button>
         <span id="sim-error" class="sim-error" role="alert"></span>
       </div>
-      <p class="sim-note">Each day the simulator compares a stock's closing price with its moving average. It buys when the price dips below the average by the set amount, then sells once the sale would beat the full cost of the purchase (price, commission and stamp duty, plus the sell commission) by the profit target, or when the stop loss is hit. Set each stock's starting balance on its chart. This is a simulation on past prices only.</p>
-      <div id="sim-summary" class="table-wrap"></div>
+      <p class="sim-note">Each day the simulator compares a stock's closing price with its moving average. It buys when the price dips below the average by the set amount, then sells once the sale would beat the full cost of the purchase (price, commission and stamp duty, plus the sell commission) by the profit target, or when the stop loss is hit. Buy and sell markers and each stock's trades appear on its chart in the Stock graphs tab. This is a simulation on past prices only.</p>
+      <div id="sim-summary"></div>
     </section>
-    <div id="charts"></div>
+    </div>
   </main>
 </div>
 
@@ -179,8 +225,10 @@ const state = {
   stocks: [],
   selected: (params.get("symbols") || "HSBA.L").split(",").filter(Boolean),
   range: RANGES.hasOwnProperty(params.get("range")) ? params.get("range") : "1y",
-  balances: {},  // symbol -> starting balance the user typed on its chart
+  view: params.get("view") === "sim" ? "sim" : "charts",
+  balances: {},  // symbol -> starting balance the user typed for it
   sim: null,     // last /api/simulate response for the current range
+  simTab: "Profit",
 };
 const charts = new Map();  // symbol -> { card, chart, candles, volume }
 const cache = new Map();   // "symbol|range" -> bars
@@ -202,7 +250,7 @@ function el(tag, attrs = {}, ...children) {
 }
 
 function saveUrl() {
-  const p = new URLSearchParams({ symbols: state.selected.join(","), range: state.range });
+  const p = new URLSearchParams({ symbols: state.selected.join(","), range: state.range, view: state.view });
   history.replaceState(null, "", "?" + p.toString().replaceAll("%2C", ","));
 }
 
@@ -241,12 +289,16 @@ function seriesColors() {
   return { upColor: up, downColor: down, wickUpColor: up, wickDownColor: down, borderVisible: false };
 }
 
-function renderList() {
+function visibleStocks() {
   const q = $("#search").value.trim().toLowerCase();
+  return q ? state.stocks.filter((s) => `${s.company} ${s.symbol} ${s.sector}`.toLowerCase().includes(q)) : state.stocks;
+}
+
+function renderList() {
+  const shown = visibleStocks();
   const list = $("#stock-list");
   list.replaceChildren();
-  for (const s of state.stocks) {
-    if (q && !`${s.company} ${s.symbol} ${s.sector}`.toLowerCase().includes(q)) continue;
+  for (const s of shown) {
     const box = el("input", { type: "checkbox", value: s.symbol });
     box.checked = state.selected.includes(s.symbol);
     box.addEventListener("change", () => toggle(s.symbol, box.checked));
@@ -255,14 +307,24 @@ function renderList() {
       el("span", { class: "sector" }, s.sector))));
   }
   $("#count").textContent = `${state.selected.length} selected`;
+  // With a search active, "select all" means all matching stocks
+  const selectAll = $("#select-all");
+  selectAll.textContent = shown.length === state.stocks.length ? "Select all" : `Select ${shown.length} shown`;
+  selectAll.disabled = shown.every((s) => state.selected.includes(s.symbol));
+  $("#clear").disabled = !state.selected.length;
 }
 
-function toggle(symbol, on) {
-  state.selected = on ? [...state.selected, symbol] : state.selected.filter((s) => s !== symbol);
+function setSelection(symbols) {
+  state.selected = symbols;
   saveUrl();
   renderList();
   renderCharts();
   renderSummary();
+  renderBalances();
+}
+
+function toggle(symbol, on) {
+  setSelection(on ? [...state.selected, symbol] : state.selected.filter((s) => s !== symbol));
 }
 
 function legendFor(bar) {
@@ -282,16 +344,13 @@ function createCard(symbol) {
   const change = el("span", { class: "change" });
   const legend = el("div", { class: "legend" });
   const holder = el("div", { class: "chart" }, el("div", { class: "status" }, "Loading…"));
-  const balance = el("input", { type: "number", min: "1", step: "any", "aria-label": `Starting balance for ${info.company}` });
-  balance.value = state.balances[symbol] ?? $("#sim-balance").value;
-  balance.addEventListener("input", () => { state.balances[symbol] = balance.value; });
   const simSlot = el("div");
   const card = el("section", { class: "card" },
     el("div", { class: "card-head" },
       el("span", { class: "title" }, info.company), el("span", { class: "sym" }, symbol),
-      el("label", { class: "bal" }, "Balance £", balance), last, change, close),
+      last, change, close),
     legend, holder, simSlot);
-  return { card, holder, legend, last, change, balance, simSlot };
+  return { card, holder, legend, last, change, simSlot };
 }
 
 async function loadChart(symbol, entry) {
@@ -307,6 +366,13 @@ async function loadChart(symbol, entry) {
     entry.holder.replaceChildren(el("div", { class: "status" }, "No price data for this range"));
     return;
   }
+  // A chart created while its tab is hidden has zero width and fits its data wrongly,
+  // so wait until the Stock graphs tab is shown (see setView)
+  if ($("#view-charts").hidden) { entry.pendingBars = bars; return; }
+  buildChart(symbol, entry, bars);
+}
+
+function buildChart(symbol, entry, bars) {
   entry.holder.replaceChildren();
   const chart = LightweightCharts.createChart(entry.holder, chartOptions());
   const candles = chart.addCandlestickSeries(seriesColors());
@@ -393,7 +459,7 @@ async function runSim(event) {
   $("#sim-error").textContent = "";
   const balances = {};
   for (const symbol of state.selected) {
-    const value = Number(charts.get(symbol)?.balance.value ?? $("#sim-balance").value);
+    const value = Number(balanceFor(symbol));
     if (!(value > 0)) { $("#sim-error").textContent = `Enter a starting balance for ${symbol}`; return; }
     balances[symbol] = value;
   }
@@ -459,42 +525,141 @@ function applySim(symbol, entry) {
   entry.simSlot.replaceChildren(el("div", { class: "sim-result" }, ...children));
 }
 
-function renderSummary() {
-  const box = $("#sim-summary");
-  const results = state.sim ? state.selected.filter((s) => state.sim.results[s]).map((s) => [s, state.sim.results[s]]) : [];
-  if (!results.length) { box.replaceChildren(); return; }
-  const company = (s) => state.stocks.find((x) => x.symbol === s)?.company || s;
-  const row = (name, r) => el("tr", {},
-    el("td", {}, name), el("td", {}, money(r.start_balance)), el("td", {}, money(r.final_value)),
-    el("td", { class: signClass(r.profit) }, money(r.profit)), el("td", { class: signClass(r.return_pct) }, pct(r.return_pct)),
-    el("td", {}, String(r.trade_count)), el("td", {}, money(r.commission + r.stamp_duty)),
-    el("td", { class: r.bh == null ? "" : signClass(r.bh) }, r.bh == null ? "n/a" : pct(r.bh)));
-  const total = results.reduce((t, [, r]) => {
+const SECTIONS = [
+  { title: "Profit", test: (r) => r.profit >= 0.005 },
+  { title: "Loss", test: (r) => r.profit <= -0.005 },
+  { title: "Flat", test: () => true },  // profit rounds to £0.00, usually no trades
+];
+
+function sumResults(results) {
+  const t = results.reduce((t, r) => {
     t.start_balance += r.start_balance; t.final_value += r.final_value; t.trade_count += r.trade_count;
     t.commission += r.commission; t.stamp_duty += r.stamp_duty;
     if (r.buy_and_hold) { t.bhStart += r.start_balance; t.bhEnd += r.buy_and_hold.final_value; }
     return t;
   }, { start_balance: 0, final_value: 0, trade_count: 0, commission: 0, stamp_duty: 0, bhStart: 0, bhEnd: 0 });
-  total.profit = total.final_value - total.start_balance;
-  total.return_pct = (total.final_value / total.start_balance - 1) * 100;
-  total.bh = total.bhStart ? (total.bhEnd / total.bhStart - 1) * 100 : null;
-  const head = el("tr", {}, ...["Stock", "Start", "End", "Profit", "Return", "Trades", "Fees", "Buy & hold"].map((h) => el("th", {}, h)));
-  box.replaceChildren(el("table", { class: "results" },
-    el("thead", {}, head),
-    el("tbody", {}, ...results.map(([s, r]) => row(company(s), { ...r, bh: r.buy_and_hold?.return_pct ?? null }))),
-    el("tfoot", {}, row("Total", total))));
+  t.profit = t.final_value - t.start_balance;
+  t.return_pct = t.start_balance ? (t.final_value / t.start_balance - 1) * 100 : 0;
+  t.bh = t.bhStart ? (t.bhEnd / t.bhStart - 1) * 100 : null;
+  return t;
+}
+
+function renderSummary() {
+  const box = $("#sim-summary");
+  const results = state.sim ? state.selected.filter((s) => state.sim.results[s]).map((s) => ({ symbol: s, ...state.sim.results[s] })) : [];
+  if (!results.length) { box.replaceChildren(); return; }
+  const company = (s) => state.stocks.find((x) => x.symbol === s)?.company || s;
+  const COLUMNS = ["Stock", "Start", "End", "Profit", "Return", "Trades", "Fees", "Buy & hold"];
+  const row = (name, r, cls = "") => el("tr", { class: cls },
+    el("td", {}, name), el("td", {}, money(r.start_balance)), el("td", {}, money(r.final_value)),
+    el("td", { class: signClass(r.profit) }, money(r.profit)), el("td", { class: signClass(r.return_pct) }, pct(r.return_pct)),
+    el("td", {}, String(r.trade_count)), el("td", {}, money(r.commission + r.stamp_duty)),
+    el("td", { class: r.bh == null ? "" : signClass(r.bh) }, r.bh == null ? "n/a" : pct(r.bh)));
+
+  const remaining = [...results];
+  const sections = SECTIONS.map(({ title, test }) => {
+    const members = remaining.filter(test).sort((a, b) => b.return_pct - a.return_pct);
+    members.forEach((r) => remaining.splice(remaining.indexOf(r), 1));
+    return { title, members };
+  });
+  const active = sections.find((sec) => sec.title === state.simTab) || sections[0];
+
+  const tabs = el("div", { class: "tabs", role: "tablist", "aria-label": "Simulation results" }, ...sections.map((sec) => {
+    const selected = sec === active;
+    const tab = el("button", {
+      type: "button", role: "tab", id: `sim-tab-${sec.title}`, "aria-controls": "sim-tabpanel",
+      "aria-selected": String(selected), tabindex: selected ? "0" : "-1",
+    }, sec.title, el("span", { class: "tab-count" }, String(sec.members.length)));
+    tab.addEventListener("click", () => { state.simTab = sec.title; renderSummary(); $(`#sim-tab-${sec.title}`).focus(); });
+    tab.addEventListener("keydown", (e) => {
+      const step = { ArrowRight: 1, ArrowLeft: -1 }[e.key];
+      if (!step) return;
+      const next = sections[(sections.indexOf(sec) + step + sections.length) % sections.length];
+      state.simTab = next.title;
+      renderSummary();
+      $(`#sim-tab-${next.title}`).focus();
+    });
+    return tab;
+  }));
+
+  // Totals go first so they stay in view however many stocks the tab lists
+  const totals = [row(`All stocks (${results.length})`, sumResults(results), "grand")];
+  if (active.members.length) totals.push(row(`${active.title} total`, sumResults(active.members), "subtotal"));
+  const body = active.members.length
+    ? active.members.map((r) => row(company(r.symbol), { ...r, bh: r.buy_and_hold?.return_pct ?? null }))
+    : [el("tr", { class: "empty-row" }, el("td", { colspan: COLUMNS.length }, `No stocks in ${active.title.toLowerCase()}`))];
+  const panel = el("div", { class: "table-wrap", role: "tabpanel", id: "sim-tabpanel", "aria-labelledby": `sim-tab-${active.title}` },
+    el("table", { class: "results" },
+      el("thead", {}, el("tr", {}, ...COLUMNS.map((h) => el("th", {}, h)))),
+      el("tbody", { class: "totals" }, ...totals),
+      el("tbody", {}, ...body)));
+  box.replaceChildren(tabs, panel);
 }
 
 $("#sim-form").addEventListener("submit", runSim);
 $("#sim-clear").addEventListener("click", clearSim);
 $("#sim-balance").addEventListener("input", () => {
-  // The default applies to every stock whose balance hasn't been typed in on its chart
-  for (const [symbol, entry] of charts) if (!(symbol in state.balances)) entry.balance.value = $("#sim-balance").value;
+  // The default applies to every stock whose balance hasn't been typed in
+  for (const input of document.querySelectorAll("#sim-balances input")) {
+    if (!(input.dataset.symbol in state.balances)) input.value = $("#sim-balance").value;
+  }
+});
+
+function balanceFor(symbol) {
+  return state.balances[symbol] ?? $("#sim-balance").value;
+}
+
+function renderBalances() {
+  const box = $("#sim-balances");
+  if (!state.selected.length) {
+    box.replaceChildren(el("span", { class: "sym" }, "Select stocks from the list to simulate them."));
+    return;
+  }
+  box.replaceChildren(...state.selected.map((symbol) => {
+    const company = state.stocks.find((x) => x.symbol === symbol)?.company || symbol;
+    const input = el("input", { type: "number", min: "1", step: "any", "data-symbol": symbol, "aria-label": `Starting balance for ${company}` });
+    input.value = balanceFor(symbol);
+    input.addEventListener("input", () => { state.balances[symbol] = input.value; });
+    return el("label", {}, el("span", { class: "name", title: company }, company), el("span", { class: "sym" }, symbol), "£", input);
+  }));
+}
+
+function setView(view) {
+  state.view = view;
+  for (const tab of document.querySelectorAll(".view-tabs [role=tab]")) {
+    const selected = tab.dataset.view === view;
+    tab.setAttribute("aria-selected", String(selected));
+    tab.tabIndex = selected ? 0 : -1;
+    $("#" + tab.getAttribute("aria-controls")).hidden = !selected;
+  }
+  saveUrl();
+  if (view !== "charts") return;
+  for (const [symbol, entry] of charts) {
+    if (!entry.pendingBars) continue;
+    const bars = entry.pendingBars;
+    delete entry.pendingBars;
+    buildChart(symbol, entry, bars);
+  }
+}
+
+document.querySelectorAll(".view-tabs [role=tab]").forEach((tab, i, tabs) => {
+  tab.addEventListener("click", () => setView(tab.dataset.view));
+  tab.addEventListener("keydown", (e) => {
+    const step = { ArrowRight: 1, ArrowLeft: -1 }[e.key];
+    if (!step) return;
+    const next = tabs[(i + step + tabs.length) % tabs.length];
+    setView(next.dataset.view);
+    next.focus();
+  });
 });
 
 document.querySelectorAll(".ranges button").forEach((b) => b.addEventListener("click", () => setRange(b.dataset.range)));
 $("#search").addEventListener("input", renderList);
-$("#clear").addEventListener("click", () => { state.selected = []; saveUrl(); renderList(); renderCharts(); });
+$("#clear").addEventListener("click", () => setSelection([]));
+$("#select-all").addEventListener("click", () => {
+  const added = visibleStocks().map((s) => s.symbol).filter((s) => !state.selected.includes(s));
+  setSelection([...state.selected, ...added]);
+});
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
   for (const { chart, candles } of charts.values()) {
     if (chart) { chart.applyOptions(chartOptions()); candles.applyOptions(seriesColors()); }
@@ -512,6 +677,8 @@ matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
     return;
   }
   renderList();
+  renderBalances();
+  setView(state.view);
   setRange(state.range);
 })();
 </script>

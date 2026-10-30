@@ -2,7 +2,7 @@
 
 Downloads daily price history for the current FTSE 100 constituents from Yahoo Finance (via [`yfinance`](https://pypi.org/project/yfinance/)) and stores it in MongoDB. A web UI charts the stored prices as candlesticks and includes a trading simulator that backtests a commission-aware strategy against UK broker fees. A command-line option prints current prices.
 
-![Web UI with the trading simulator panel and candlestick charts for HSBC and BT Group](docs/screenshots/desktop.png)
+![Web UI on the Stock graphs tab with candlestick charts for HSBC, BT Group and AstraZeneca](docs/screenshots/desktop.png)
 
 ## Contents
 
@@ -125,7 +125,8 @@ Run `.venv/bin/python ticker.py --help` for all options.
 - Choose a date range: 1M, 3M, 6M, 1Y, 5Y or Max.
 - Each chart shows candles, volume, the latest close and its change from the previous day. Hover to see a day's open, high, low, close and volume.
 - Scrolling or zooming one chart moves all the others to the same dates.
-- The selection and range are kept in the URL, so you can bookmark a view, e.g. `/?symbols=HSBA.L,BT-A.L&range=6m`.
+- The main area has two tabs: **Stock graphs** and **Trading simulator**. The left arrow and right arrow keys also switch between them.
+- The selection, range and open tab are kept in the URL, so you can bookmark a view, e.g. `/?symbols=HSBA.L,BT-A.L&range=6m&view=sim`.
 
 Stocks are shown as separate charts rather than overlaid because their prices differ by orders of magnitude. Charts are drawn with [TradingView Lightweight Charts](https://github.com/tradingview/lightweight-charts) 4.2.0, loaded from unpkg, so the browser needs internet access.
 
@@ -149,9 +150,9 @@ This uses Flask's built-in server, which is fine for personal use on a home netw
 
 ## Trading simulator
 
-The panel above the charts backtests a trading strategy on the stored daily prices of the selected stocks, over the selected date range. Each stock trades separately from its own starting balance, which you set in the **Balance £** box on its chart (new charts use the default balance from the panel).
+The **Trading simulator** tab backtests a trading strategy on the stored daily prices of the selected stocks, over the selected date range. Each stock trades separately from its own starting balance, set in the **Starting balances** list on that tab. Stocks use the default balance until you change theirs.
 
-![Simulator results for HSBC and BT Group over one year, with buy and sell markers on the charts](docs/screenshots/simulator.png)
+![Trading simulator tab with settings, per-stock starting balances and results grouped into Profit, Loss and Flat tabs](docs/screenshots/simulator.png)
 
 ### Strategy
 
@@ -177,7 +178,7 @@ UK stamp duty of 0.5% is added to every purchase (it can be switched off, for ex
 
 ### Results
 
-For each stock the chart shows buy (B), sell (S) and stop-loss (Stop) markers, the simulated end value, return, trade count with wins and losses, commission and stamp duty paid, any position still held, and a table of every trade. The panel totals all stocks. Every result is compared with **buy & hold**: buying on the first day with the same balance and fees and holding to the end.
+On the **Stock graphs** tab, each stock's chart shows buy (B), sell (S) and stop-loss (Stop) markers, the simulated end value, return, trade count with wins and losses, commission and stamp duty paid, any position still held, and a table of every trade. The simulator tab groups the stocks into three tabs, **Profit**, **Loss** and **Flat** (no gain or loss, usually because no trades were made), each showing its stock count. The top of the table always shows the total for all stocks and the total for the open tab, followed by that tab's stocks sorted by return. Every result is compared with **buy & hold**: buying on the first day with the same balance and fees and holding to the end.
 
 With small balances the fees dominate. Every round trip costs about 0.6% (0.5% stamp duty plus commission) before minimums, and a £3 minimum is 0.3% of a £1,000 trade each way. Over most stocks and periods tested so far the strategy has trailed buy & hold. Use the simulator to explore how balance, thresholds and fees change that, but treat it as a model: it trades at closing prices with no slippage, spread or dividends.
 
