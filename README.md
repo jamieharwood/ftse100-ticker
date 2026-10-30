@@ -10,6 +10,7 @@ Downloads daily price history for the current FTSE 100 constituents from Yahoo F
 - [Installation](#installation)
 - [Configuration](#configuration)
 - [Usage](#usage)
+- [Web UI](#web-ui)
 - [Scheduling](#scheduling)
 - [Data model](#data-model)
 - [Testing](#testing)
@@ -27,6 +28,7 @@ Downloads daily price history for the current FTSE 100 constituents from Yahoo F
 - Keeps the constituent list current from Wikipedia and flags companies that leave the index.
 - Keeps working if Wikipedia is unavailable by falling back to the last stored constituent list.
 - Prints current (≈15 minute delayed) prices with `--quote`.
+- Web UI with interactive candlestick charts for any selection of stocks.
 - Timestamped logging and a non-zero exit code on failure, suitable for cron.
 
 ## How it works
@@ -42,7 +44,7 @@ The constituent list is refreshed on every successful scrape. Companies leaving 
 - Python 3 (developed on 3.12)
 - A reachable MongoDB instance (developed against MongoDB 8)
 - Internet access to Wikipedia and Yahoo Finance
-- Packages pinned in `requirements.txt`: `yfinance`, `pymongo`, `pandas`, `lxml`, `requests`, and `pytest` for tests
+- Packages pinned in `requirements.txt`: `yfinance`, `pymongo`, `pandas`, `lxml`, `requests`, `flask` (web UI), and `pytest` for tests
 
 ## Installation
 
@@ -104,6 +106,32 @@ Provide EPICs (`BT.A`) or Yahoo symbols (`BT-A.L`), in any case. With no symbols
 
 Run `.venv/bin/python ticker.py --help` for all options.
 
+## Web UI
+
+`webapp.py` serves a page of daily candlestick charts from the data in MongoDB:
+
+```bash
+.venv/bin/python webapp.py                  # http://127.0.0.1:5000
+.venv/bin/python webapp.py --host 0.0.0.0   # also reachable from other machines on the LAN
+```
+
+- Tick stocks in the sidebar (searchable by company, symbol or sector) to add a chart for each; untick or press × to remove one.
+- Choose a date range: 1M, 3M, 6M, 1Y, 5Y or Max.
+- Each chart shows candles, volume, the latest close and its change from the previous day. Hover to see a day's open, high, low, close and volume.
+- Scrolling or zooming one chart moves all the others to the same dates.
+- The selection and range are kept in the URL, so you can bookmark a view, e.g. `/?symbols=HSBA.L,BT-A.L&range=6m`.
+
+Stocks are shown as separate charts rather than overlaid because their prices differ by orders of magnitude. Charts are drawn with [TradingView Lightweight Charts](https://github.com/tradingview/lightweight-charts) 4.2.0, loaded from unpkg, so the browser needs internet access.
+
+The page uses two JSON endpoints:
+
+| Endpoint | Returns |
+|---|---|
+| `GET /api/stocks` | Current constituents: `symbol`, `company`, `sector`, sorted by company |
+| `GET /api/prices/<symbol>?start=YYYY-MM-DD` | Daily bars `time`, `open`, `high`, `low`, `close`, `volume` in date order; `start` is optional |
+
+This uses Flask's built-in server, which is fine for personal use on a home network. Don't expose it to the internet.
+
 ## Scheduling
 
 To load prices every weekday after the London Stock Exchange closes (16:30 UK time), add a crontab entry with `crontab -e`:
@@ -157,13 +185,15 @@ The tests run offline and need no MongoDB or internet access:
 .venv/bin/python -m pytest tests -k price_docs  # tests matching a name
 ```
 
-They cover symbol conversion, date normalisation (which the duplicate protection depends on), skipping days without prices, and the constituent fallback.
+They cover symbol conversion, date normalisation (which the duplicate protection depends on), skipping days without prices, the constituent fallback, and the web API.
 
 ## Project structure
 
 ```text
 ticker.py            # loader and --quote command
-tests/test_ticker.py # offline unit tests
+webapp.py            # Flask web UI and JSON API
+static/index.html    # candlestick chart page
+tests/               # offline unit tests
 requirements.txt     # pinned dependencies
 schema/              # MongoDB $jsonSchema and indexes for each collection
 CLAUDE.md            # notes for Claude Code

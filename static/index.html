@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FTSE 100 Charts</title>
+<script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --border: #e2e5ea; --text: #1b1f24; --muted: #667085;
+    --accent: #2f6fde; --accent-soft: #e8f0fd; --grid: #eef0f3;
+    --up: #1a9e75; --down: #d64545;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f1216; --panel: #171b21; --border: #2a3038; --text: #e6e8eb; --muted: #8b95a3;
+      --accent: #6b9cf0; --accent-soft: #1d2a3f; --grid: #20252c;
+      --up: #2bb98a; --down: #ef6161;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  header {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+    padding: 12px 20px; background: var(--panel); border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; z-index: 2;
+  }
+  h1 { font-size: 17px; margin: 0; font-weight: 650; }
+  h1 span { color: var(--muted); font-weight: 400; font-size: 13px; margin-left: 6px; }
+  .ranges { display: flex; gap: 4px; }
+  .ranges button {
+    border: 1px solid var(--border); background: var(--panel); color: var(--text);
+    padding: 5px 11px; border-radius: 6px; cursor: pointer; font: inherit; font-size: 13px;
+  }
+  .ranges button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .layout { display: grid; grid-template-columns: 300px 1fr; min-height: calc(100vh - 57px); }
+  aside {
+    background: var(--panel); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; height: calc(100vh - 57px); position: sticky; top: 57px;
+  }
+  .search { padding: 12px; border-bottom: 1px solid var(--border); }
+  .search input {
+    width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--bg); color: var(--text); font: inherit;
+  }
+  .search .meta { display: flex; justify-content: space-between; margin-top: 8px; color: var(--muted); font-size: 12px; }
+  .search .meta button { border: 0; background: none; color: var(--accent); cursor: pointer; font: inherit; padding: 0; }
+  #stock-list { list-style: none; margin: 0; padding: 4px 0; overflow-y: auto; flex: 1; }
+  #stock-list label {
+    display: grid; grid-template-columns: auto 1fr auto; gap: 2px 10px; align-items: center;
+    padding: 7px 14px; cursor: pointer;
+  }
+  #stock-list label:hover { background: var(--bg); }
+  #stock-list input:checked ~ .name { font-weight: 600; }
+  #stock-list li:has(input:checked) label { background: var(--accent-soft); }
+  .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sym { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .sector { grid-column: 2 / 4; color: var(--muted); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  main { padding: 16px 20px 40px; display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  .card-head {
+    display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+    padding: 10px 14px 6px; border-bottom: 1px solid var(--grid);
+  }
+  .card-head .title { font-weight: 650; font-size: 15px; }
+  .card-head .last { margin-left: auto; font-variant-numeric: tabular-nums; font-weight: 600; }
+  .change.up { color: var(--up); } .change.down { color: var(--down); }
+  .card-head .close-btn {
+    border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 18px; line-height: 1; padding: 0 2px;
+  }
+  .legend { padding: 4px 14px 0; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; min-height: 20px; }
+  .legend b { color: var(--text); font-weight: 500; margin-right: 10px; }
+  .chart { height: 380px; }
+  .status { padding: 40px; text-align: center; color: var(--muted); }
+  .empty { margin: auto; text-align: center; color: var(--muted); padding: 60px 20px; }
+  .empty strong { display: block; color: var(--text); font-size: 16px; margin-bottom: 4px; }
+  @media (max-width: 760px) {
+    header { padding: 10px 16px; }
+    .layout { grid-template-columns: 1fr; }
+    aside { position: static; height: 300px; border-right: 0; border-bottom: 1px solid var(--border); }
+    main { padding: 12px 16px 32px; }
+    .chart { height: 300px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>FTSE 100 Charts <span>daily prices in pence</span></h1>
+  <div class="ranges" role="group" aria-label="Date range">
+    <button data-range="1m">1M</button>
+    <button data-range="3m">3M</button>
+    <button data-range="6m">6M</button>
+    <button data-range="1y">1Y</button>
+    <button data-range="5y">5Y</button>
+    <button data-range="max">Max</button>
+  </div>
+</header>
+<div class="layout">
+  <aside>
+    <div class="search">
+      <input id="search" type="search" placeholder="Search company, symbol or sector" autocomplete="off">
+      <div class="meta"><span id="count"></span><button id="clear" type="button">Clear selection</button></div>
+    </div>
+    <ul id="stock-list"></ul>
+  </aside>
+  <main id="charts"></main>
+</div>
+
+<script>
+const RANGES = { "1m": 1, "3m": 3, "6m": 6, "1y": 12, "5y": 60, "max": null };  // months
+const params = new URLSearchParams(location.search);
+const state = {
+  stocks: [],
+  selected: (params.get("symbols") || "HSBA.L").split(",").filter(Boolean),
+  range: RANGES.hasOwnProperty(params.get("range")) ? params.get("range") : "1y",
+};
+const charts = new Map();  // symbol -> { card, chart, candles, volume }
+const cache = new Map();   // "symbol|range" -> bars
+let syncing = false;
+
+const $ = (sel) => document.querySelector(sel);
+const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const fmt = (n) => n.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtVol = (n) => n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? (n / 1e3).toFixed(0) + "K" : String(n);
+
+function el(tag, attrs = {}, ...children) {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) k === "class" ? (node.className = v) : node.setAttribute(k, v);
+  node.append(...children);
+  return node;
+}
+
+function saveUrl() {
+  const p = new URLSearchParams({ symbols: state.selected.join(","), range: state.range });
+  history.replaceState(null, "", "?" + p.toString().replaceAll("%2C", ","));
+}
+
+function startDate(range) {
+  const months = RANGES[range];
+  if (!months) return null;
+  const d = new Date();
+  d.setMonth(d.getMonth() - months);
+  return d.toISOString().slice(0, 10);
+}
+
+async function fetchBars(symbol) {
+  const key = symbol + "|" + state.range;
+  if (!cache.has(key)) {
+    const start = startDate(state.range);
+    const res = await fetch(`/api/prices/${encodeURIComponent(symbol)}` + (start ? `?start=${start}` : ""));
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    cache.set(key, await res.json());
+  }
+  return cache.get(key);
+}
+
+function chartOptions() {
+  return {
+    autoSize: true,
+    layout: { background: { color: css("--panel") }, textColor: css("--muted"), fontSize: 11 },
+    grid: { vertLines: { color: css("--grid") }, horzLines: { color: css("--grid") } },
+    rightPriceScale: { borderColor: css("--border") },
+    timeScale: { borderColor: css("--border") },
+    crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+  };
+}
+
+function seriesColors() {
+  const up = css("--up"), down = css("--down");
+  return { upColor: up, downColor: down, wickUpColor: up, wickDownColor: down, borderVisible: false };
+}
+
+function renderList() {
+  const q = $("#search").value.trim().toLowerCase();
+  const list = $("#stock-list");
+  list.replaceChildren();
+  for (const s of state.stocks) {
+    if (q && !`${s.company} ${s.symbol} ${s.sector}`.toLowerCase().includes(q)) continue;
+    const box = el("input", { type: "checkbox", value: s.symbol });
+    box.checked = state.selected.includes(s.symbol);
+    box.addEventListener("change", () => toggle(s.symbol, box.checked));
+    list.append(el("li", {}, el("label", {}, box,
+      el("span", { class: "name" }, s.company), el("span", { class: "sym" }, s.symbol),
+      el("span", { class: "sector" }, s.sector))));
+  }
+  $("#count").textContent = `${state.selected.length} selected`;
+}
+
+function toggle(symbol, on) {
+  state.selected = on ? [...state.selected, symbol] : state.selected.filter((s) => s !== symbol);
+  saveUrl();
+  renderList();
+  renderCharts();
+}
+
+function legendFor(bar) {
+  const parts = [["O", fmt(bar.open)], ["H", fmt(bar.high)], ["L", fmt(bar.low)], ["C", fmt(bar.close)]];
+  const frag = document.createDocumentFragment();
+  frag.append(bar.time + "  ");
+  for (const [k, v] of parts) frag.append(k + " ", el("b", {}, v));
+  if (bar.volume != null) frag.append("Vol ", el("b", {}, fmtVol(bar.volume)));
+  return frag;
+}
+
+function createCard(symbol) {
+  const info = state.stocks.find((s) => s.symbol === symbol) || { company: symbol, symbol };
+  const close = el("button", { class: "close-btn", title: "Remove", "aria-label": `Remove ${info.company}` }, "×");
+  close.addEventListener("click", () => toggle(symbol, false));
+  const last = el("span", { class: "last" });
+  const change = el("span", { class: "change" });
+  const legend = el("div", { class: "legend" });
+  const holder = el("div", { class: "chart" }, el("div", { class: "status" }, "Loading…"));
+  const card = el("section", { class: "card" },
+    el("div", { class: "card-head" },
+      el("span", { class: "title" }, info.company), el("span", { class: "sym" }, symbol), last, change, close),
+    legend, holder);
+  return { card, holder, legend, last, change };
+}
+
+async function loadChart(symbol, entry) {
+  let bars;
+  try {
+    bars = await fetchBars(symbol);
+  } catch (err) {
+    entry.holder.replaceChildren(el("div", { class: "status" }, `Couldn't load prices (${err.message})`));
+    return;
+  }
+  if (charts.get(symbol) !== entry) return;  // removed or range changed while loading
+  if (!bars.length) {
+    entry.holder.replaceChildren(el("div", { class: "status" }, "No price data for this range"));
+    return;
+  }
+  entry.holder.replaceChildren();
+  const chart = LightweightCharts.createChart(entry.holder, chartOptions());
+  const candles = chart.addCandlestickSeries(seriesColors());
+  candles.setData(bars);
+  candles.priceScale().applyOptions({ scaleMargins: { top: 0.08, bottom: 0.24 } });
+  const volume = chart.addHistogramSeries({ priceFormat: { type: "volume" }, priceScaleId: "", lastValueVisible: false, priceLineVisible: false });
+  volume.priceScale().applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
+  volume.setData(bars.map((b) => ({ time: b.time, value: b.volume, color: (b.close >= b.open ? css("--up") : css("--down")) + "55" })));
+  chart.timeScale().fitContent();
+  Object.assign(entry, { chart, candles, volume });
+
+  const lastBar = bars[bars.length - 1], prev = bars[bars.length - 2];
+  entry.last.textContent = fmt(lastBar.close) + "p";
+  if (prev) {
+    const pct = (lastBar.close - prev.close) / prev.close * 100;
+    entry.change.textContent = `${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%`;
+    entry.change.className = "change " + (pct >= 0 ? "up" : "down");
+  }
+  const byTime = new Map(bars.map((b) => [b.time, b]));
+  entry.legend.replaceChildren(legendFor(lastBar));
+  chart.subscribeCrosshairMove((p) => {
+    entry.legend.replaceChildren(legendFor((p.time && byTime.get(p.time)) || lastBar));
+  });
+
+  // Keep every chart showing the same dates when one is scrolled or zoomed
+  chart.timeScale().subscribeVisibleTimeRangeChange((range) => {
+    if (syncing || !range) return;
+    syncing = true;
+    for (const other of charts.values()) {
+      if (other !== entry && other.chart) {
+        try { other.chart.timeScale().setVisibleRange(range); } catch (e) { /* range outside other's data */ }
+      }
+    }
+    syncing = false;
+  });
+}
+
+function removeChart(symbol) {
+  const entry = charts.get(symbol);
+  if (!entry) return;
+  if (entry.chart) entry.chart.remove();
+  entry.card.remove();
+  charts.delete(symbol);
+}
+
+function renderCharts() {
+  const main = $("#charts");
+  for (const symbol of [...charts.keys()]) if (!state.selected.includes(symbol)) removeChart(symbol);
+  main.querySelector(".empty")?.remove();
+  if (!state.selected.length) {
+    main.append(el("div", { class: "empty" }, el("strong", {}, "No stocks selected"), "Pick one or more stocks from the list to chart them."));
+    return;
+  }
+  for (const symbol of state.selected) {
+    if (charts.has(symbol)) continue;
+    const entry = createCard(symbol);
+    charts.set(symbol, entry);
+    main.append(entry.card);
+    loadChart(symbol, entry);
+  }
+}
+
+function setRange(range) {
+  state.range = range;
+  document.querySelectorAll(".ranges button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.range === range));
+  saveUrl();
+  for (const symbol of [...charts.keys()]) removeChart(symbol);
+  renderCharts();
+}
+
+document.querySelectorAll(".ranges button").forEach((b) => b.addEventListener("click", () => setRange(b.dataset.range)));
+$("#search").addEventListener("input", renderList);
+$("#clear").addEventListener("click", () => { state.selected = []; saveUrl(); renderList(); renderCharts(); });
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+  for (const { chart, candles } of charts.values()) {
+    if (chart) { chart.applyOptions(chartOptions()); candles.applyOptions(seriesColors()); }
+  }
+});
+
+(async () => {
+  try {
+    const res = await fetch("/api/stocks");
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    state.stocks = await res.json();
+  } catch (err) {
+    $("#charts").replaceChildren(el("div", { class: "empty" }, el("strong", {}, "Couldn't load the stock list"), err.message));
+    return;
+  }
+  renderList();
+  setRange(state.range);
+})();
+</script>
+</body>
+</html>

@@ -87,7 +87,8 @@ def sync_constituents(db):
 
 
 def price_docs(symbol, history):
-    for date, row in history.dropna(subset=["Close"]).iterrows():
+    # Skip incomplete bars: NaN would be stored as-is and break JSON consumers like webapp.py
+    for date, row in history.dropna(subset=["Open", "High", "Low", "Close"]).iterrows():
         # The (symbol, date) unique index only dedupes if every bar for a day has the
         # same key, so drop any timezone (keeping exchange-local wall time) and time of day
         if date.tzinfo is not None:

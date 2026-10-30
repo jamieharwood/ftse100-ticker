@@ -33,6 +33,14 @@ Loader output goes through `logging` with timestamps. Any exception is logged an
 
 There is no linter config. Git remote: `github.com/jamieharwood/ftse100-ticker` (private), branch `main`.
 
+## Web UI
+
+`webapp.py` is a Flask app built by `create_app(db)` (tests inject a fake db). It imports `MONGO_URI`/`DB_NAME` from `ticker.py`. It serves `static/index.html`, a single page with no build step that loads Lightweight Charts 4.2.0 from unpkg (v4 API: `addCandlestickSeries`; v5 renamed it). The page fetches `/api/stocks` and `/api/prices/<symbol>?start=`. Bars must be `{time: "YYYY-MM-DD", open, high, low, close}` in ascending date order, and must not contain NaN, which is why `price_docs` drops incomplete bars. Each selected stock gets its own chart, and the charts keep their visible time range in sync.
+
+```bash
+.venv/bin/python webapp.py [--host 0.0.0.0] [--port 5000]
+```
+
 ## Data model (`stocks` database)
 
 - `constituents`: one doc per symbol (`symbol`, `epic`, `company`, `isin`, `sector`, `in_index`), unique on `symbol`. Companies that leave the index keep their doc with `in_index: false`. `--quote` with no symbols and the scrape fallback both use only `in_index: true`.
