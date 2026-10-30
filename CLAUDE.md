@@ -31,7 +31,7 @@ Loader output goes through `logging` with timestamps. Any exception is logged an
 .venv/bin/python -m pytest tests -k price_docs            # single test
 ```
 
-There is no linter config, and the project is not a git repository.
+There is no linter config. Git remote: `github.com/jamieharwood/ftse100-ticker` (private), branch `main`.
 
 ## Data model (`stocks` database)
 
