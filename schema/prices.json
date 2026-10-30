@@ -1,0 +1,35 @@
+{
+  "collection": "prices",
+  "description": "One document per symbol per trading day. Written by load_prices() in ticker.py; prices are in pence (GBp).",
+  "validator": {
+    "$jsonSchema": {
+      "bsonType": "object",
+      "required": ["symbol", "date", "open", "high", "low", "close", "adj_close", "volume"],
+      "properties": {
+        "_id": { "bsonType": "objectId" },
+        "symbol": {
+          "bsonType": "string",
+          "pattern": "^[A-Z0-9-]+\\.L$",
+          "description": "Yahoo Finance symbol; matches constituents.symbol"
+        },
+        "date": {
+          "bsonType": "date",
+          "description": "Trading day as naive midnight (exchange-local). Must stay normalised or the unique index won't prevent same-day duplicates"
+        },
+        "open": { "bsonType": "double" },
+        "high": { "bsonType": "double" },
+        "low": { "bsonType": "double" },
+        "close": { "bsonType": "double" },
+        "adj_close": { "bsonType": "double" },
+        "volume": {
+          "bsonType": ["int", "long"],
+          "minimum": 0,
+          "description": "Shares traded; pymongo stores int32 or int64 depending on size"
+        }
+      }
+    }
+  },
+  "indexes": [
+    { "key": { "symbol": 1, "date": 1 }, "name": "symbol_1_date_1", "unique": true }
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "collection": "constituents",
+  "description": "One document per FTSE 100 symbol, current or former. Written by sync_constituents() in ticker.py.",
+  "validator": {
+    "$jsonSchema": {
+      "bsonType": "object",
+      "required": ["symbol", "epic", "company", "isin", "sector", "in_index"],
+      "properties": {
+        "_id": { "bsonType": "objectId" },
+        "symbol": {
+          "bsonType": "string",
+          "pattern": "^[A-Z0-9-]+\\.L$",
+          "description": "Yahoo Finance symbol, e.g. HSBA.L, BT-A.L"
+        },
+        "epic": {
+          "bsonType": "string",
+          "description": "LSE ticker as listed on Wikipedia, e.g. HSBA, BT.A"
+        },
+        "company": { "bsonType": "string" },
+        "isin": {
+          "bsonType": "string",
+          "pattern": "^[A-Z]{2}[A-Z0-9]{9}[0-9]$"
+        },
+        "sector": {
+          "bsonType": "string",
+          "description": "FTSE Industry Classification Benchmark sector"
+        },
+        "in_index": {
+          "bsonType": "bool",
+          "description": "true while the company is a current FTSE 100 constituent"
+        }
+      }
+    }
+  },
+  "indexes": [
+    { "key": { "symbol": 1 }, "name": "symbol_1", "unique": true }
+  ]
+}

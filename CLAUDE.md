@@ -38,6 +38,8 @@ There is no linter config. Git remote: `github.com/jamieharwood/ftse100-ticker` 
 - `constituents`: one doc per symbol (`symbol`, `epic`, `company`, `isin`, `sector`, `in_index`), unique on `symbol`. Companies that leave the index keep their doc with `in_index: false`. `--quote` with no symbols and the scrape fallback both use only `in_index: true`.
 - `prices`: one doc per symbol per trading day (`symbol`, `date`, `open`, `high`, `low`, `close`, `adj_close`, `volume`), unique on `(symbol, date)`. Writes are upserts, so re-running is idempotent; today's bar is overwritten as it changes intraday. `date` is always stored as naive midnight (exchange-local day); `price_docs` normalises it, because a tz-aware or intraday timestamp would bypass the unique index and create a same-day duplicate.
 
+`schema/<collection>.json` holds a `$jsonSchema` validator and the index definitions for each collection. They document the live data but aren't applied to MongoDB. If you change the fields `ticker.py` writes, update the matching schema file, then check it against the live data with `db.<coll>.count_documents({"$nor": [{"$jsonSchema": schema}]}) == 0`.
+
 ## Notes
 
 - Symbol mapping: the Wikipedia EPIC gets `.` replaced with `-` and `.L` appended (`BT.A` → `BT-A.L`). Yahoo needs this format.
