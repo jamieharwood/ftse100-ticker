@@ -75,3 +75,13 @@ def test_buy_and_hold_benchmark():
     spent = sum(simulator.buy_costs(shares, 1.00, "fixed", True))
     proceeds, _ = simulator.sale_proceeds(shares, 1.10, "fixed")
     assert bh["final_value"] == pytest.approx(1000 - spent + proceeds, abs=0.01)
+
+
+def test_trade_profits_add_up_to_total_to_the_penny():
+    # Awkward prices (fractions of a penny per share value) over several round trips
+    closes = [1262.8, 1262.8, 1180.7, 1263.3, 1301.7, 1213.9, 1110.1, 1296.6, 1301.3, 1199.9, 1283.8]
+    result = simulator.simulate(bars(*closes), 1000, {**PARAMS, "target_pct": 0.5})
+    realised = sum(t["pnl"] for t in result["trades"] if t["side"] == "sell")
+    unrealised = result["open_position"]["unrealised_pnl"] if result["open_position"] else 0
+    assert len(result["trades"]) >= 2
+    assert round(realised + unrealised, 2) == result["profit"]

@@ -148,6 +148,29 @@
   .sim-result summary { cursor: pointer; color: var(--accent); font-size: 12px; }
   .sim-result table.results th, .sim-result table.results td { padding: 4px 10px; }
   .status { padding: 40px; text-align: center; color: var(--muted); }
+  #charts .card { scroll-margin-top: 72px; }  /* keep "View on chart" clear of the sticky header */
+  .results-grid tbody tr.clickable { cursor: pointer; }
+  .results-grid tbody tr.clickable:hover td { background: var(--bg); }
+  .stock-link { border: 0; background: none; padding: 0; font: inherit; color: var(--accent); cursor: pointer; text-align: left; }
+  .stock-link:hover { text-decoration: underline; }
+  dialog.trades {
+    width: min(1000px, calc(100vw - 32px)); max-height: calc(100vh - 48px); padding: 0;
+    border: 1px solid var(--border); border-radius: 12px; background: var(--panel); color: var(--text);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  }
+  dialog.trades::backdrop { background: rgba(10, 14, 20, 0.5); }
+  .dialog-inner { display: flex; flex-direction: column; max-height: calc(100vh - 50px); }
+  .dialog-head { display: flex; align-items: baseline; gap: 10px; padding: 14px 18px 10px; border-bottom: 1px solid var(--grid); }
+  .dialog-head h2 { margin: 0; font-size: 17px; }
+  .dialog-head .close-btn { margin-left: auto; border: 0; background: none; color: var(--muted); font-size: 22px; line-height: 1; cursor: pointer; }
+  .dialog-body { overflow: auto; padding-bottom: 6px; }
+  .dialog-body .stats { display: flex; gap: 6px 18px; flex-wrap: wrap; padding: 10px 18px; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+  .dialog-body .stats b { color: var(--text); font-weight: 600; }
+  .dialog-body h3 { font-size: 13px; margin: 6px 18px 4px; }
+  .dialog-body table.results th, .dialog-body table.results td { padding: 5px 12px; }
+  .dialog-body table.results tr.open-row td { font-style: italic; }
+  .dialog-body table.results tfoot td { font-weight: 650; border-top: 1px solid var(--border); }
+  .dialog-foot { display: flex; gap: 8px; justify-content: space-between; align-items: center; flex-wrap: wrap; padding: 10px 18px 14px; border-top: 1px solid var(--grid); color: var(--muted); font-size: 12px; }
   .empty { margin: auto; text-align: center; color: var(--muted); padding: 60px 20px; }
   .empty strong { display: block; color: var(--text); font-size: 16px; margin-bottom: 4px; }
   @media (max-width: 760px) {
@@ -230,6 +253,8 @@
     </div>
   </main>
 </div>
+
+<dialog id="trades-dialog" class="trades" aria-labelledby="trades-title"></dialog>
 
 <script>
 const RANGES = { "1m": 1, "3m": 3, "6m": 6, "1y": 12, "5y": 60, "max": null };  // months
@@ -591,6 +616,86 @@ function setSort(key) {
   $(`#sort-${key}`).focus();
 }
 
+function roundTrips(trades) {
+  // Pair each buy with the sell that closed it; the simulator holds at most one position at a time
+  const trips = [];
+  let buy = null;
+  for (const t of trades) {
+    if (t.side === "buy") buy = t;
+    else { trips.push({ buy, sell: t }); buy = null; }
+  }
+  return { trips, openBuy: buy };
+}
+
+const daysBetween = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / 86400000);
+
+function openTrades(symbol, returnFocus) {
+  const result = state.sim?.results[symbol];
+  if (!result) return;
+  const name = state.stocks.find((x) => x.symbol === symbol)?.company || symbol;
+  const { trips, openBuy } = roundTrips(result.trades);
+  const dialog = $("#trades-dialog");
+
+  const stat = (label, value, cls = "") => el("span", {}, label + " ", el("b", { class: cls }, value));
+  const stats = el("div", { class: "stats" },
+    stat("Simulated", `${money(result.start_balance)} → ${money(result.final_value)}`),
+    stat("Profit", `${money(result.profit)} (${pct(result.return_pct)})`, signClass(result.profit)),
+    stat("Round trips", `${trips.length} (${result.wins} won, ${result.losses} lost)`),
+    stat("Fees", `${money(result.commission + result.stamp_duty)} (commission ${money(result.commission)}, stamp duty ${money(result.stamp_duty)})`),
+    stat("Buy & hold", result.buy_and_hold ? pct(result.buy_and_hold.return_pct) : "n/a",
+         result.buy_and_hold ? signClass(result.buy_and_hold.return_pct) : ""));
+
+  const heads = ["#", "Bought", "Buy price", "Sold", "Sell price", "Shares", "Days held", "Invested", "Fees", "Profit after fees", "Return"];
+  const tripRow = (i, buy, sell, pnl, cls = "") => {
+    const invested = buy.value + buy.commission + buy.stamp_duty;
+    const fees = buy.commission + buy.stamp_duty + (sell?.commission ?? 0);
+    const soldLabel = sell ? sell.time + (sell.reason === "stop" ? " (stop)" : "") : "Still held";
+    const sellPrice = sell ? fmt(sell.price) + "p" : fmt(result.open_position.last_price) + "p (last)";
+    return el("tr", { class: cls },
+      el("td", {}, String(i)), el("td", {}, buy.time), el("td", {}, fmt(buy.price) + "p"),
+      el("td", { class: sell?.reason === "stop" ? "neg" : "" }, soldLabel), el("td", {}, sellPrice),
+      el("td", {}, String(buy.shares)), el("td", {}, sell ? String(daysBetween(buy.time, sell.time)) : "–"),
+      el("td", {}, money(invested)), el("td", {}, money(fees)),
+      el("td", { class: signClass(pnl) }, money(pnl)), el("td", { class: signClass(pnl) }, pct(pnl / invested * 100)));
+  };
+  const rows = trips.map((t, i) => tripRow(i + 1, t.buy, t.sell, t.sell.pnl));
+  if (openBuy && result.open_position) rows.push(tripRow(trips.length + 1, openBuy, null, result.open_position.unrealised_pnl, "open-row"));
+
+  const realised = trips.reduce((sum, t) => sum + t.sell.pnl, 0);
+  const unrealised = result.open_position?.unrealised_pnl ?? 0;
+  const totalFees = result.commission + result.stamp_duty;
+  const table = rows.length
+    ? el("table", { class: "results" },
+        el("thead", {}, el("tr", {}, ...heads.map((h) => el("th", { scope: "col" }, h)))),
+        el("tbody", {}, ...rows),
+        el("tfoot", {}, el("tr", {},
+          el("td", { colspan: "8" }, `Total: ${money(realised)} from sold trades` + (result.open_position ? ` + ${money(unrealised)} still held` : "")),
+          el("td", {}, money(totalFees)),
+          el("td", { class: signClass(realised + unrealised) }, money(realised + unrealised)),
+          el("td", { class: signClass(result.return_pct) }, pct(result.return_pct)))))
+    : el("p", { class: "sim-note", style: "padding-top: 10px" },
+        "No trades: the price never fell far enough below its moving average to trigger a buy in this range.");
+
+  const close = el("button", { type: "button", class: "close-btn", "aria-label": "Close" }, "×");
+  close.addEventListener("click", () => dialog.close());
+  const toChart = el("button", { type: "button", class: "btn" }, "View on chart");
+  toChart.addEventListener("click", () => {
+    dialog.close();
+    setView("charts");
+    charts.get(symbol)?.card.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+  dialog.replaceChildren(el("div", { class: "dialog-inner" },
+    el("div", { class: "dialog-head" }, el("h2", { id: "trades-title" }, name), el("span", { class: "sym" }, symbol), close),
+    el("div", { class: "dialog-body" }, stats, el("h3", {}, "Trades (each buy paired with the sell that closed it)"),
+      el("div", { class: "table-wrap" }, table)),
+    el("div", { class: "dialog-foot" },
+      el("span", {}, "Prices in pence; money in pounds. Fees include commission on both sides and 0.5% stamp duty on each buy where enabled."),
+      toChart)));
+  dialog.returnFocus = returnFocus;
+  dialog.showModal();
+  close.focus();
+}
+
 function renderSummary() {
   const box = $("#sim-summary");
   const results = state.sim ? state.selected.filter((s) => state.sim.results[s]).map((s) => ({ symbol: s, ...state.sim.results[s] })) : [];
@@ -640,7 +745,12 @@ function renderSummary() {
   const totals = [row(`All stocks (${results.length})`, sumResults(results), "grand")];
   if (active.members.length) totals.push(row(`${active.title} total`, sumResults(active.members), "subtotal"));
   const body = active.members.length
-    ? active.members.map((r) => row(company(r.symbol), { ...r, bh: r.buy_and_hold?.return_pct ?? null }))
+    ? active.members.map((r) => {
+        const link = el("button", { type: "button", class: "stock-link", title: "Show trades" }, company(r.symbol));
+        const tr = row(link, { ...r, bh: r.buy_and_hold?.return_pct ?? null }, "clickable");
+        tr.addEventListener("click", () => openTrades(r.symbol, link));
+        return tr;
+      })
     : [el("tr", { class: "empty-row" }, el("td", { colspan: SUMMARY_COLUMNS.length }, `No stocks in ${active.title.toLowerCase()}`))];
   const panel = el("div", { class: "results-grid", role: "tabpanel", id: "sim-tabpanel", "aria-labelledby": `sim-tab-${active.title}`, tabindex: "0" },
     el("table", { class: "results" }, el("thead", {}, headings, ...totals), el("tbody", {}, ...body)));
@@ -658,6 +768,10 @@ function pinSummaryRows() {
   }
 }
 
+$("#trades-dialog").addEventListener("click", (e) => {
+  if (e.target === e.currentTarget) e.currentTarget.close();  // click on the backdrop
+});
+$("#trades-dialog").addEventListener("close", (e) => e.currentTarget.returnFocus?.focus());
 $("#sim-form").addEventListener("submit", runSim);
 $("#sim-clear").addEventListener("click", clearSim);
 $("#sim-balance").addEventListener("input", () => {

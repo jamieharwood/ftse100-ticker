@@ -30,7 +30,8 @@ def commission(value, plan):
 
 
 def buy_costs(shares, price, plan, stamp_duty):
-    value = shares * price
+    # Trades settle in whole pence, so per-trade profits add up exactly to the total
+    value = round(shares * price, 2)
     duty = round(value * STAMP_DUTY_RATE, 2) if stamp_duty else 0.0
     return value, commission(value, plan), duty
 
@@ -46,7 +47,7 @@ def affordable_shares(budget, price, plan, stamp_duty):
 
 
 def sale_proceeds(shares, price, plan):
-    value = shares * price
+    value = round(shares * price, 2)
     fee = commission(value, plan)
     return value - fee, fee
 
