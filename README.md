@@ -1,18 +1,19 @@
-# FTSE 100 Price Loader
+# FTSE 100 Ticker
 
-Downloads daily price history for the current FTSE 100 constituents from Yahoo Finance (via [`yfinance`](https://pypi.org/project/yfinance/)) and stores it in MongoDB. It can also print current prices without writing to the database, and includes a web UI with candlestick charts.
+Downloads daily price history for the current FTSE 100 constituents from Yahoo Finance (via [`yfinance`](https://pypi.org/project/yfinance/)) and stores it in MongoDB. A web UI charts the stored prices as candlesticks and includes a trading simulator that backtests a commission-aware strategy against UK broker fees. A command-line option prints current prices.
 
-![Candlestick charts for HSBC, BT Group and AstraZeneca over six months](docs/screenshots/desktop.png)
+![Web UI with the trading simulator panel and candlestick charts for HSBC and BT Group](docs/screenshots/desktop.png)
 
 ## Contents
 
 - [Features](#features)
-- [How it works](#how-it-works)
+- [How the loader works](#how-the-loader-works)
 - [Requirements](#requirements)
 - [Installation](#installation)
 - [Configuration](#configuration)
 - [Usage](#usage)
 - [Web UI](#web-ui)
+- [Trading simulator](#trading-simulator)
 - [Scheduling](#scheduling)
 - [Data model](#data-model)
 - [Testing](#testing)
@@ -31,9 +32,10 @@ Downloads daily price history for the current FTSE 100 constituents from Yahoo F
 - Keeps working if Wikipedia is unavailable by falling back to the last stored constituent list.
 - Prints current (≈15 minute delayed) prices with `--quote`.
 - Web UI with interactive candlestick charts for any selection of stocks.
+- Trading simulator that backtests a commission-aware strategy on the stored prices, with UK commission and stamp duty.
 - Timestamped logging and a non-zero exit code on failure, suitable for cron.
 
-## How it works
+## How the loader works
 
 1. Reads the current constituent list from the [FTSE 100 Wikipedia page](https://en.wikipedia.org/wiki/FTSE_100_Index). If the scrape fails or returns too few rows (fewer than 90), it uses the previously stored current constituents; if none are stored, the load fails.
 2. Converts each EPIC to Yahoo Finance format (for example, `BT.A` becomes `BT-A.L`).
@@ -65,13 +67,15 @@ The MongoDB database (`stocks`) and its collections and indexes are created auto
 |---|---|---|
 | MongoDB connection | `mongodb://storenator.bluelarma.com:27017` | `MONGO_URI` environment variable |
 | Database name | `stocks` | `DB_NAME` constant in `ticker.py` |
-| History period | `5d` | `--period` option |
+| History period | `5d` | `ticker.py --period` option |
+| Web UI address | `127.0.0.1:5000` | `webapp.py --host` and `--port` options |
+| Commission rates and stamp duty | IBKR UK fixed/tiered, 0.5% | `COMMISSION_PLANS` and `STAMP_DUTY_RATE` in `simulator.py` |
 
 ```bash
 MONGO_URI=mongodb://localhost:27017 .venv/bin/python ticker.py
 ```
 
-`MONGO_URI` accepts any standard [MongoDB connection string](https://www.mongodb.com/docs/manual/reference/connection-string/), including credentials if your server requires them.
+`MONGO_URI` applies to both `ticker.py` and `webapp.py`, and accepts any standard [MongoDB connection string](https://www.mongodb.com/docs/manual/reference/connection-string/), including credentials if your server requires them.
 
 ## Usage
 
@@ -110,7 +114,7 @@ Run `.venv/bin/python ticker.py --help` for all options.
 
 ## Web UI
 
-`webapp.py` serves a page of daily candlestick charts from the data in MongoDB:
+`webapp.py` serves a page of daily candlestick charts and the [trading simulator](#trading-simulator), using the data in MongoDB. It only reads from the database, so run `ticker.py` first to load prices:
 
 ```bash
 .venv/bin/python webapp.py                  # http://127.0.0.1:5000
@@ -125,12 +129,13 @@ Run `.venv/bin/python ticker.py --help` for all options.
 
 Stocks are shown as separate charts rather than overlaid because their prices differ by orders of magnitude. Charts are drawn with [TradingView Lightweight Charts](https://github.com/tradingview/lightweight-charts) 4.2.0, loaded from unpkg, so the browser needs internet access.
 
-The page uses two JSON endpoints:
+The page uses three JSON endpoints:
 
 | Endpoint | Returns |
 |---|---|
 | `GET /api/stocks` | Current constituents: `symbol`, `company`, `sector`, sorted by company |
 | `GET /api/prices/<symbol>?start=YYYY-MM-DD` | Daily bars `time`, `open`, `high`, `low`, `close`, `volume` in date order; `start` is optional |
+| `POST /api/simulate` | Runs the [trading simulator](#trading-simulator); body `{"balances": {"HSBA.L": 1000}, "start": "YYYY-MM-DD", "params": {...}}` |
 
 The page follows the system light or dark theme and stacks the stock list above the charts on narrow screens:
 
@@ -141,6 +146,40 @@ The page follows the system light or dark theme and stacks the stock list above 
 </p>
 
 This uses Flask's built-in server, which is fine for personal use on a home network. Don't expose it to the internet.
+
+## Trading simulator
+
+The panel above the charts backtests a trading strategy on the stored daily prices of the selected stocks, over the selected date range. Each stock trades separately from its own starting balance, which you set in the **Balance £** box on its chart (new charts use the default balance from the panel).
+
+![Simulator results for HSBC and BT Group over one year, with buy and sell markers on the charts](docs/screenshots/simulator.png)
+
+### Strategy
+
+On each trading day the simulator looks at the closing price, the "current price" for that day, and decides:
+
+- **Buy** when the stock holds no position and the close is at least *Buy when below average by* % below its *Moving average* of closing prices. It buys as many whole shares as the cash (or *Max per trade*) covers after commission and stamp duty.
+- **Sell (target)** when selling at the close would return the full cost of the position, including the purchase commission, stamp duty and the sell commission, plus the *Profit target*. A target sale therefore never loses money after fees.
+- **Sell (stop)** when the close falls *Stop loss* % below the purchase price (0 turns this off).
+- Otherwise **hold**.
+
+Trades fill at the day's closing price. Bars just before the range seed the moving average, so trading can start on the first day of the range. A position still open at the end is valued at what selling it on the last day would raise.
+
+### Costs
+
+Commission follows the [Interactive Brokers UK (GBP) rates](https://www.interactivebrokers.co.uk/en/pricing/commissions-stocks.php?region=europe) for IB SmartRouting:
+
+| Plan | Commission per order |
+|---|---|
+| Fixed (default) | 0.05% of trade value, minimum £3 |
+| Tiered | 0.05% of trade value, minimum £1 (for monthly volume up to £40M); exchange and clearing fees are charged on top and aren't modelled |
+
+UK stamp duty of 0.5% is added to every purchase (it can be switched off, for example for the few FTSE 100 shares registered outside the UK that are exempt). The rates are in `COMMISSION_PLANS` and `STAMP_DUTY_RATE` in `simulator.py`.
+
+### Results
+
+For each stock the chart shows buy (B), sell (S) and stop-loss (Stop) markers, the simulated end value, return, trade count with wins and losses, commission and stamp duty paid, any position still held, and a table of every trade. The panel totals all stocks. Every result is compared with **buy & hold**: buying on the first day with the same balance and fees and holding to the end.
+
+With small balances the fees dominate. Every round trip costs about 0.6% (0.5% stamp duty plus commission) before minimums, and a £3 minimum is 0.3% of a £1,000 trade each way. Over most stocks and periods tested so far the strategy has trailed buy & hold. Use the simulator to explore how balance, thresholds and fees change that, but treat it as a model: it trades at closing prices with no slippage, spread or dividends.
 
 ## Scheduling
 
@@ -195,13 +234,14 @@ The tests run offline and need no MongoDB or internet access:
 .venv/bin/python -m pytest tests -k price_docs  # tests matching a name
 ```
 
-They cover symbol conversion, date normalisation (which the duplicate protection depends on), skipping days without prices, the constituent fallback, and the web API.
+They cover symbol conversion, date normalisation (which the duplicate protection depends on), skipping days without prices, the constituent fallback, the web API, and the simulator's fees, buy/sell rules and benchmark.
 
 ## Project structure
 
 ```text
 ticker.py            # loader and --quote command
 webapp.py            # Flask web UI and JSON API
+simulator.py         # trading strategy backtest and UK fee model
 static/index.html    # candlestick chart page
 docs/screenshots/    # README images
 tests/               # offline unit tests
@@ -220,6 +260,9 @@ CLAUDE.md            # notes for Claude Code
 | `ERROR ... No price data returned for any of 100 symbols` | Yahoo is unreachable or rate-limiting. Try again later. |
 | A date is missing for every stock | Yahoo hasn't published that day yet. A later run with the default period fills it in. |
 | `ModuleNotFoundError` | Run with `.venv/bin/python`, or install the requirements into the virtual environment. |
+| Web UI shows "Couldn't load the stock list" | `webapp.py` can't reach MongoDB, or `constituents` is empty. Check `MONGO_URI` and run `ticker.py` once. |
+| "Simulation failed: ... Not Found" | The running `webapp.py` predates the simulator. Restart it after pulling changes; Flask's server doesn't reload code. |
+| A stock shows "No price data for this range" | Nothing is stored for that period, e.g. the company listed recently. Choose a longer range or backfill with `--period max`. |
 
 ## Limitations
 
@@ -227,6 +270,8 @@ CLAUDE.md            # notes for Claude Code
 - Yahoo Finance data is unofficial, delayed, and may contain gaps; `yfinance` is not affiliated with Yahoo.
 - History covers today's constituents only. Companies that left the index before they were first recorded aren't included, so historical index membership can't be reconstructed from this data.
 - `yfinance` changes often; versions are pinned, so upgrade deliberately and re-run the tests.
+- The trading simulator is a backtest on daily closing prices. It makes at most one decision per stock per day and ignores the bid-ask spread, slippage and dividends, so real trading would do somewhat worse. Past results don't predict future returns.
+- The web UI has no login and uses Flask's development server; keep it on a trusted network.
 
 ## Contributing
 

@@ -41,6 +41,10 @@ There is no linter config. Git remote: `github.com/jamieharwood/ftse100-ticker` 
 .venv/bin/python webapp.py [--host 0.0.0.0] [--port 5000]
 ```
 
+## Trading simulator
+
+`simulator.py` is pure Python with no I/O. `simulate(bars, balance, params, warmup)` backtests one stock: bars are dicts with `time` and `close` in pence, and all money is in pounds. The strategy buys whole shares when the close is `dip_pct` below the `sma_days` average. It sells when net sale proceeds beat the position's full cost (value + commission + stamp duty) by `target_pct`, or on `stop_pct`. Commission rates (IBKR UK GBP fixed/tiered) and 0.5% stamp duty on buys are module constants. `POST /api/simulate` in `webapp.py` validates input against `PARAM_LIMITS`, loads `sma_days` warmup bars before `start`, and runs each symbol. The UI shows the results as series markers (`setMarkers`, v4 API) plus per-card and total tables. Results are cleared when the date range changes.
+
 ## Data model (`stocks` database)
 
 - `constituents`: one doc per symbol (`symbol`, `epic`, `company`, `isin`, `sector`, `in_index`), unique on `symbol`. Companies that leave the index keep their doc with `in_index: false`. `--quote` with no symbols and the scrape fallback both use only `in_index: true`.

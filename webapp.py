@@ -5,9 +5,46 @@ from datetime import datetime
 from flask import Flask, abort, jsonify, request
 from pymongo import MongoClient
 
+import simulator
 from ticker import DB_NAME, MONGO_URI
 
 SYMBOL_RE = re.compile(r"^[A-Z0-9-]+\.L$")
+BAR_FIELDS = ("open", "high", "low", "close", "volume")
+PROJECTION = {"_id": 0, "date": 1, **{f: 1 for f in BAR_FIELDS}}
+# (min, max) for numeric strategy parameters accepted from the UI
+PARAM_LIMITS = {"sma_days": (2, 250), "dip_pct": (0, 50), "target_pct": (0, 100), "stop_pct": (0, 100),
+                "trade_size": (1, 10_000_000)}
+MAX_BALANCE = 10_000_000
+
+
+def to_bar(doc):
+    # Lightweight Charts expects daily bars keyed by "time" as YYYY-MM-DD
+    return {"time": doc["date"].strftime("%Y-%m-%d"), **{k: doc[k] for k in BAR_FIELDS}}
+
+
+def parse_start(value):
+    try:
+        return datetime.strptime(value, "%Y-%m-%d") if value else None
+    except ValueError:
+        abort(400, "start must be YYYY-MM-DD")
+
+
+def parse_params(raw):
+    params = {}
+    for name, (low, high) in PARAM_LIMITS.items():
+        value = raw.get(name)
+        if value is None:
+            continue
+        if not isinstance(value, (int, float)) or isinstance(value, bool) or not low <= value <= high:
+            abort(400, f"{name} must be a number from {low} to {high}")
+        params[name] = int(value) if name == "sma_days" else float(value)
+    if "plan" in raw:
+        if raw["plan"] not in simulator.COMMISSION_PLANS:
+            abort(400, "plan must be one of " + ", ".join(simulator.COMMISSION_PLANS))
+        params["plan"] = raw["plan"]
+    if "stamp_duty" in raw:
+        params["stamp_duty"] = bool(raw["stamp_duty"])
+    return params
 
 
 def create_app(db):
@@ -28,21 +65,38 @@ def create_app(db):
     def prices(symbol):
         if not SYMBOL_RE.match(symbol):
             abort(400, "Invalid symbol")
+        return jsonify(load_bars(symbol, parse_start(request.args.get("start"))))
+
+    @app.post("/api/simulate")
+    def simulate():
+        body = request.get_json(silent=True) or {}
+        balances = body.get("balances")
+        if not isinstance(balances, dict) or not balances:
+            abort(400, "balances must map symbols to starting balances")
+        for symbol, balance in balances.items():
+            if not SYMBOL_RE.match(symbol):
+                abort(400, f"Invalid symbol {symbol}")
+            if not isinstance(balance, (int, float)) or isinstance(balance, bool) or not 0 < balance <= MAX_BALANCE:
+                abort(400, f"Balance for {symbol} must be between 0 and {MAX_BALANCE}")
+        start = parse_start(body.get("start"))
+        params = {**simulator.DEFAULT_PARAMS, **parse_params(body.get("params") or {})}
+
+        results = {}
+        for symbol, balance in balances.items():
+            warmup = []
+            if start:
+                # Bars just before the range seed the moving average
+                docs = db.prices.find({"symbol": symbol, "date": {"$lt": start}}, PROJECTION)
+                warmup = [to_bar(d) for d in docs.sort("date", -1).limit(params["sma_days"])][::-1]
+            results[symbol] = simulator.simulate(load_bars(symbol, start), balance, params, warmup)
+        return jsonify({"params": params, "results": results})
+
+    def load_bars(symbol, start):
         query = {"symbol": symbol}
-        if start := request.args.get("start"):
-            try:
-                query["date"] = {"$gte": datetime.strptime(start, "%Y-%m-%d")}
-            except ValueError:
-                abort(400, "start must be YYYY-MM-DD")
+        if start:
+            query["date"] = {"$gte": start}
         # Served by the (symbol, date) unique index
-        docs = db.prices.find(
-            query, {"_id": 0, "date": 1, "open": 1, "high": 1, "low": 1, "close": 1, "volume": 1}
-        ).sort("date", 1)
-        # Lightweight Charts expects daily bars keyed by "time" as YYYY-MM-DD
-        return jsonify([
-            {"time": d["date"].strftime("%Y-%m-%d"), **{k: d[k] for k in ("open", "high", "low", "close", "volume")}}
-            for d in docs
-        ])
+        return [to_bar(d) for d in db.prices.find(query, PROJECTION).sort("date", 1)]
 
     return app
 

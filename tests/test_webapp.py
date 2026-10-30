@@ -9,6 +9,9 @@ class FakeCursor(list):
     def sort(self, field, direction):
         return FakeCursor(sorted(self, key=lambda d: d[field], reverse=direction < 0))
 
+    def limit(self, n):
+        return FakeCursor(self[:n])
+
 
 class FakeCollection:
     def __init__(self, docs):
@@ -62,3 +65,30 @@ def test_prices_rejects_bad_input(url):
     db = FakeDB()
     assert client(db).get(url).status_code == 400
     assert db.prices.queries == []
+
+
+def test_simulate_runs_each_symbol_with_its_balance():
+    db = FakeDB(prices=[bar(d, c) for d, c in [(26, 100.0), (27, 100.0), (28, 90.0), (29, 99.0)]])
+    resp = client(db).post("/api/simulate", json={
+        "balances": {"HSBA.L": 1000, "BP.L": 500},
+        "params": {"sma_days": 3, "dip_pct": 5, "plan": "tiered", "trade_size": None},
+    })
+    body = resp.get_json()
+    assert resp.status_code == 200
+    assert body["params"]["plan"] == "tiered" and body["params"]["trade_size"] is None
+    assert body["results"]["HSBA.L"]["start_balance"] == 1000
+    assert body["results"]["BP.L"]["start_balance"] == 500
+    assert [t["side"] for t in body["results"]["HSBA.L"]["trades"]] == ["buy", "sell"]
+
+
+@pytest.mark.parametrize("body", [
+    {},
+    {"balances": {"hsba": 1000}},
+    {"balances": {"HSBA.L": 0}},
+    {"balances": {"HSBA.L": "1000"}},
+    {"balances": {"HSBA.L": 1000}, "params": {"dip_pct": -1}},
+    {"balances": {"HSBA.L": 1000}, "params": {"plan": "free"}},
+    {"balances": {"HSBA.L": 1000}, "start": "30/10/2026"},
+])
+def test_simulate_rejects_bad_input(body):
+    assert client(FakeDB()).post("/api/simulate", json=body).status_code == 400
