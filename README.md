@@ -1,6 +1,8 @@
 # FTSE 100 Price Loader
 
-Downloads daily price history for the current FTSE 100 constituents from Yahoo Finance (via [`yfinance`](https://pypi.org/project/yfinance/)) and stores it in MongoDB. It can also print current prices without writing to the database.
+Downloads daily price history for the current FTSE 100 constituents from Yahoo Finance (via [`yfinance`](https://pypi.org/project/yfinance/)) and stores it in MongoDB. It can also print current prices without writing to the database, and includes a web UI with candlestick charts.
+
+![Candlestick charts for HSBC, BT Group and AstraZeneca over six months](docs/screenshots/desktop.png)
 
 ## Contents
 
@@ -130,6 +132,14 @@ The page uses two JSON endpoints:
 | `GET /api/stocks` | Current constituents: `symbol`, `company`, `sector`, sorted by company |
 | `GET /api/prices/<symbol>?start=YYYY-MM-DD` | Daily bars `time`, `open`, `high`, `low`, `close`, `volume` in date order; `start` is optional |
 
+The page follows the system light or dark theme and stacks the stock list above the charts on narrow screens:
+
+<p>
+  <img src="docs/screenshots/desktop-dark.png" alt="Dark theme: five years of Barclays and Lloyds Banking Group" width="72%">
+  &nbsp;
+  <img src="docs/screenshots/mobile.png" alt="Phone layout with the stock list above the charts" width="24%">
+</p>
+
 This uses Flask's built-in server, which is fine for personal use on a home network. Don't expose it to the internet.
 
 ## Scheduling
@@ -193,6 +203,7 @@ They cover symbol conversion, date normalisation (which the duplicate protection
 ticker.py            # loader and --quote command
 webapp.py            # Flask web UI and JSON API
 static/index.html    # candlestick chart page
+docs/screenshots/    # README images
 tests/               # offline unit tests
 requirements.txt     # pinned dependencies
 schema/              # MongoDB $jsonSchema and indexes for each collection

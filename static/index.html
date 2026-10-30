@@ -19,6 +19,9 @@
     }
   }
   * { box-sizing: border-box; }
+  /* Native controls (checkboxes, search box) follow the theme */
+  :root { color-scheme: light dark; accent-color: var(--accent); }
+  :root[data-theme="light"] { color-scheme: light; }
   body {
     margin: 0; background: var(--bg); color: var(--text);
     font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
