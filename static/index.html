@@ -148,7 +148,15 @@
   .sim-result summary { cursor: pointer; color: var(--accent); font-size: 12px; }
   .sim-result table.results th, .sim-result table.results td { padding: 4px 10px; }
   .status { padding: 40px; text-align: center; color: var(--muted); }
-  #charts .card { scroll-margin-top: 72px; }  /* keep "View on chart" clear of the sticky header */
+  #charts .card { scroll-margin-top: 72px; }
+  .to-top {
+    position: fixed; right: 24px; bottom: 24px; z-index: 3; width: 44px; height: 44px; border-radius: 50%;
+    border: 1px solid var(--border); background: var(--panel); color: var(--accent); cursor: pointer;
+    display: grid; place-items: center; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+  }
+  .to-top:hover { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .to-top[hidden] { display: none; }
+  @media (max-width: 760px) { .to-top { right: 16px; bottom: 16px; } }  /* keep "View on chart" clear of the sticky header */
   .results-grid tbody tr.clickable { cursor: pointer; }
   .results-grid tbody tr.clickable:hover td { background: var(--bg); }
   .stock-link { border: 0; background: none; padding: 0; font: inherit; color: var(--accent); cursor: pointer; text-align: left; }
@@ -253,6 +261,10 @@
     </div>
   </main>
 </div>
+
+<button id="to-top" class="to-top" type="button" title="Back to top" aria-label="Back to top" hidden>
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+</button>
 
 <dialog id="trades-dialog" class="trades" aria-labelledby="trades-title"></dialog>
 
@@ -768,6 +780,17 @@ function pinSummaryRows() {
   }
 }
 
+function updateToTop() {
+  // Only on the Stock graphs tab, once the page has scrolled about a screen down
+  $("#to-top").hidden = state.view !== "charts" || scrollY < innerHeight * 0.8;
+}
+addEventListener("scroll", updateToTop, { passive: true });
+$("#to-top").addEventListener("click", () => {
+  const smooth = !matchMedia("(prefers-reduced-motion: reduce)").matches;
+  scrollTo({ top: 0, behavior: smooth ? "smooth" : "auto" });
+  $("#view-tab-charts").focus({ preventScroll: true });
+});
+
 $("#trades-dialog").addEventListener("click", (e) => {
   if (e.target === e.currentTarget) e.currentTarget.close();  // click on the backdrop
 });
@@ -809,6 +832,7 @@ function setView(view) {
     $("#" + tab.getAttribute("aria-controls")).hidden = !selected;
   }
   saveUrl();
+  updateToTop();
   if (view === "sim") pinSummaryRows();
   if (view !== "charts") return;
   for (const [symbol, entry] of charts) {

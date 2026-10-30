@@ -125,6 +125,7 @@ Run `.venv/bin/python ticker.py --help` for all options.
 - Choose a date range: 1M, 3M, 6M, 1Y, 5Y or Max.
 - Each chart shows candles, volume, the latest close and its change from the previous day. Hover to see a day's open, high, low, close and volume.
 - Scrolling or zooming one chart moves all the others to the same dates.
+- A **back to top** button appears in the bottom-right corner of the Stock graphs tab once you scroll down.
 - The main area has two tabs: **Stock graphs** and **Trading simulator**. The left arrow and right arrow keys also switch between them.
 - The selection, range and open tab are kept in the URL, so you can bookmark a view, e.g. `/?symbols=HSBA.L,BT-A.L&range=6m&view=sim`.
 
