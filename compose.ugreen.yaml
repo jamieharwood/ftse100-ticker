@@ -1,0 +1,9 @@
+services:
+  web:
+    image: jamieharwood/ftse100-ticker:latest
+    container_name: ftse100-ticker
+    environment:
+      MONGO_URI: mongodb://storenator.bluelarma.com:27017
+    ports:
+      - "8082:5000"
+    restart: unless-stopped

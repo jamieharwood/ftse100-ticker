@@ -1,0 +1,12 @@
+services:
+  web:
+    image: jamieharwood/ftse100-ticker:latest
+    build:
+      context: .
+      tags:
+        - jamieharwood/ftse100-ticker:0.0.2
+    environment:
+      MONGO_URI: ${MONGO_URI:-mongodb://storenator.bluelarma.com:27017}
+    ports:
+      - "5000:5000"
+    restart: unless-stopped
