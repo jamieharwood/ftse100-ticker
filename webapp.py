@@ -1,12 +1,16 @@
 import argparse
+import logging
 import re
+import threading
 from datetime import datetime
 
 from flask import Flask, abort, jsonify, request
 from pymongo import MongoClient
 
 import simulator
-from ticker import DB_NAME, MONGO_URI
+from ticker import DB_NAME, MONGO_URI, load_prices
+
+log = logging.getLogger("webapp")
 
 SYMBOL_RE = re.compile(r"^[A-Z0-9-]+\.L$")
 BAR_FIELDS = ("open", "high", "low", "close", "volume")
@@ -49,6 +53,34 @@ def parse_params(raw):
 
 def create_app(db):
     app = Flask(__name__, static_folder="static", static_url_path="")
+    refresh = {"status": "idle"}
+    refresh_lock = threading.Lock()
+
+    def run_refresh():
+        nonlocal refresh
+        try:
+            outcome = {"status": "done", **load_prices(db, "max")}
+        except Exception as exc:
+            log.exception("History refresh failed")
+            outcome = {"status": "failed", "error": str(exc)}
+        with refresh_lock:
+            refresh = outcome
+
+    @app.get("/api/refresh-history")
+    def refresh_status():
+        with refresh_lock:
+            return jsonify(refresh)
+
+    @app.post("/api/refresh-history")
+    def start_refresh():
+        # A full download takes minutes, so it runs in the background and the page polls for
+        # the outcome. A second request while one is running just joins it.
+        nonlocal refresh
+        with refresh_lock:
+            if refresh["status"] != "running":
+                refresh = {"status": "running"}
+                threading.Thread(target=run_refresh, daemon=True).start()
+            return jsonify(refresh), 202
 
     @app.get("/")
     def index():
@@ -107,6 +139,7 @@ def main():
     parser.add_argument("--port", type=int, default=5000)
     args = parser.parse_args()
 
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     app = create_app(MongoClient(MONGO_URI)[DB_NAME])
     app.run(host=args.host, port=args.port)
 

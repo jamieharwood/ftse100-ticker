@@ -1,3 +1,5 @@
+import threading
+import time
 from datetime import datetime
 
 import pytest
@@ -92,3 +94,47 @@ def test_simulate_runs_each_symbol_with_its_balance():
 ])
 def test_simulate_rejects_bad_input(body):
     assert client(FakeDB()).post("/api/simulate", json=body).status_code == 400
+
+
+def wait_for_refresh(api):
+    for _ in range(200):
+        status = api.get("/api/refresh-history").get_json()
+        if status["status"] != "running":
+            return status
+        time.sleep(0.01)
+    raise AssertionError("refresh still running")
+
+
+def test_refresh_history_loads_max_period_once_while_running(monkeypatch):
+    release = threading.Event()
+    calls = []
+
+    def fake_load(db, period):
+        calls.append(period)
+        release.wait(5)
+        return {"symbols": 100, "rows": 5, "inserted": 1, "updated": 2, "missing": []}
+
+    monkeypatch.setattr(webapp, "load_prices", fake_load)
+    api = client(FakeDB())
+    assert api.get("/api/refresh-history").get_json() == {"status": "idle"}
+    assert api.post("/api/refresh-history").status_code == 202
+    assert api.post("/api/refresh-history").get_json() == {"status": "running"}
+    release.set()
+
+    status = wait_for_refresh(api)
+    assert status["status"] == "done" and status["rows"] == 5
+    assert calls == ["max"]
+
+
+def test_refresh_history_reports_failure_and_can_retry(monkeypatch):
+    def fake_load(db, period):
+        raise RuntimeError("Yahoo is down")
+
+    monkeypatch.setattr(webapp, "load_prices", fake_load)
+    api = client(FakeDB())
+    api.post("/api/refresh-history")
+    assert wait_for_refresh(api) == {"status": "failed", "error": "Yahoo is down"}
+
+    monkeypatch.setattr(webapp, "load_prices", lambda db, period: {"rows": 1})
+    api.post("/api/refresh-history")
+    assert wait_for_refresh(api) == {"status": "done", "rows": 1}

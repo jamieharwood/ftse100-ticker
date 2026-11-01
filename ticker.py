@@ -156,6 +156,8 @@ def load_prices(db, period):
              result.upserted_count, result.modified_count)
     if missing:
         log.warning("No data for: %s", ", ".join(missing))
+    return {"symbols": len(symbols) - len(missing), "rows": len(ops), "inserted": result.upserted_count,
+            "updated": result.modified_count, "missing": missing}
 
 
 def main():

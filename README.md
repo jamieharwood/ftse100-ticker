@@ -114,7 +114,7 @@ Run `.venv/bin/python ticker.py --help` for all options.
 
 ## Web UI
 
-`webapp.py` serves a page of daily candlestick charts and the [trading simulator](#trading-simulator), using the data in MongoDB. It only reads from the database, so run `ticker.py` first to load prices:
+`webapp.py` serves a page of daily candlestick charts and the [trading simulator](#trading-simulator), using the data in MongoDB. Run `ticker.py` first to load prices:
 
 ```bash
 .venv/bin/python webapp.py                  # http://127.0.0.1:5000
@@ -125,19 +125,22 @@ Run `.venv/bin/python ticker.py --help` for all options.
 - Choose a date range: 1M, 3M, 6M, 1Y, 5Y or Max.
 - Each chart shows candles, volume, the latest close and its change from the previous day. Hover to see a day's open, high, low, close and volume.
 - Scrolling or zooming one chart moves all the others to the same dates.
+- **Refresh full history** in the header does the same as `ticker.py --period max`: it downloads every stock's prices as far back as Yahoo has them and updates MongoDB. This can take a few minutes. It keeps running if you close the page, and the charts reload when it finishes. Simulator results are cleared because the prices may have changed.
 - A **back to top** button appears in the bottom-right corner of the Stock graphs tab once you scroll down.
 - The main area has two tabs: **Stock graphs** and **Trading simulator**. The left arrow and right arrow keys also switch between them.
 - The selection, range and open tab are kept in the URL, so you can bookmark a view, e.g. `/?symbols=HSBA.L,BT-A.L&range=6m&view=sim`.
 
 Stocks are shown as separate charts rather than overlaid because their prices differ by orders of magnitude. Charts are drawn with [TradingView Lightweight Charts](https://github.com/tradingview/lightweight-charts) 4.2.0, loaded from unpkg, so the browser needs internet access.
 
-The page uses three JSON endpoints:
+The page uses these JSON endpoints:
 
 | Endpoint | Returns |
 |---|---|
 | `GET /api/stocks` | Current constituents: `symbol`, `company`, `sector`, sorted by company |
 | `GET /api/prices/<symbol>?start=YYYY-MM-DD` | Daily bars `time`, `open`, `high`, `low`, `close`, `volume` in date order; `start` is optional |
 | `POST /api/simulate` | Runs the [trading simulator](#trading-simulator); body `{"balances": {"HSBA.L": 1000}, "start": "YYYY-MM-DD", "params": {...}}` |
+| `POST /api/refresh-history` | Starts a full-history download in the background, or joins the one already running; returns `202` and `{"status": "running"}` |
+| `GET /api/refresh-history` | Status of the latest refresh since the server started: `idle`, `running`, `done` (with `symbols`, `rows`, `inserted`, `updated`, `missing`) or `failed` (with `error`) |
 
 The page follows the system light or dark theme and stacks the stock list above the charts on narrow screens:
 

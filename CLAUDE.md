@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `ticker.py` loads daily prices for the FTSE 100 into MongoDB:
 
-1. `sync_constituents()` scrapes the current constituent list from the Wikipedia "FTSE 100 Index" page (the table with `Company`/`Ticker` columns) and flags members with `in_index`. If the scrape fails, or returns fewer than `MIN_CONSTITUENTS` rows, it logs a warning and falls back to the stored `in_index: true` symbols, so a Wikipedia change never blocks the daily load.
+1. `sync_constituents()` scrapes the current constituent list from the Wikipedia "FTSE 100 Index" page (the table with `Company`/`Ticker` columns) and flags members with `in_index`. If the scrape fails, or returns fewer than `MIN_CONSTITUENTS` rows, it logs a warning and falls back to the stored `in_index: true` symbols, so a Wikipedia change doesn't block the daily load. The load fails only if no symbols are stored either.
 2. Batch-downloads OHLCV history for all symbols with `yf.download(..., group_by="ticker", auto_adjust=False)`.
 3. Upserts into the `stocks` database on `storenator.bluelarma.com:27017` (LAN host, no auth).
 
@@ -31,7 +31,11 @@ Loader output goes through `logging` with timestamps. Any exception is logged an
 .venv/bin/python -m pytest tests -k price_docs            # single test
 ```
 
-Tests use hand-written fakes (`FakeDB`/`FakeCollection`/`FakeCursor` in each test file, not mongomock), so a new query method in `webapp.py` or `ticker.py` needs a matching fake method. There are no frontend tests; check UI changes by running `webapp.py`.
+Use `python -m pytest`: there is no `conftest.py` or pytest config, so bare `pytest` can't import the top-level modules and fails at collection.
+
+Tests use hand-written fakes defined separately in each test file, not mongomock (`FakeDB`/`FakeCollection`/`FakeCursor` in `test_webapp.py`, `FakeDB`/`FakeConstituents` in `test_ticker.py`), so a new query method in `webapp.py` or `ticker.py` needs a matching fake method. There are no frontend tests; check UI changes by running `webapp.py`.
+
+`README.md` is the user-facing documentation (UI behaviour, strategy rules, troubleshooting), so user-visible changes usually need a matching update there.
 
 There is no linter config. Git remote: `github.com/jamieharwood/ftse100-ticker` (private), branch `main`.
 
@@ -43,9 +47,22 @@ There is no linter config. Git remote: `github.com/jamieharwood/ftse100-ticker` 
 .venv/bin/python webapp.py [--host 0.0.0.0] [--port 5000]
 ```
 
+`Dockerfile` and `compose.yaml` build the public image `jamieharwood/ftse100-ticker` (`latest` and a version tag set in `compose.yaml`), which runs the web UI by default. It's built with `docker compose build`, and `.dockerignore` is an allowlist, so a new top-level file must be added there and to the `COPY` lines. Anyone can pull this image, so don't add secrets to it. The cron loader still runs from the host venv, not the image.
+
+The server runs without a reloader, so restart it after changing Python code; a stale process shows up as "Not Found" on new endpoints. Only `load_prices()` creates the indexes. It's also the only way `webapp.py` writes to MongoDB: the header's Refresh full history button calls `POST /api/refresh-history`, which runs `load_prices(db, "max")` in a background thread while the page polls `GET` on the same route. That status is held in memory, so it assumes a single server process and resets on restart.
+
 ## Trading simulator
 
 `simulator.py` is pure Python with no I/O. `simulate(bars, balance, params, warmup)` backtests one stock: bars are dicts with `time` and `close` in pence, and all money is in pounds. The strategy buys whole shares when the close is `dip_pct` below the `sma_days` average. It sells when net sale proceeds beat the position's full cost (value + commission + stamp duty) by `target_pct`, or on `stop_pct`. Commission rates (IBKR UK GBP fixed/tiered) and 0.5% stamp duty on buys are module constants. `POST /api/simulate` in `webapp.py` validates input against `PARAM_LIMITS`, loads `sma_days` warmup bars before `start`, and runs each symbol. In each trade dict, `price` is pence (the raw close) and every other money field is pounds, rounded to whole pence so per-trade P&L adds up exactly to the total (a test checks this). Open positions are valued at net sale proceeds on the last bar, and `buy_and_hold` uses the same fees as a benchmark. The UI shows the results as series markers (`setMarkers`, v4 API), per-card tables, and a sortable summary with pinned total rows. Clicking a row opens a `<dialog>` that lists the stock's trades paired into round trips. Results are cleared when the date range changes.
+
+Modelling details that are easy to miss:
+
+- Each stock trades independently from its own balance, holding at most one position, with no capital shared across stocks.
+- Trades fill at the close, and a stock can't buy again on the day it sells.
+- With no `start` (the Max range) there are no warmup bars, so trading can't begin until `sma_days` bars have passed.
+- API bars omit `adj_close`, so charts and backtests use `close`, and dividends aren't modelled.
+
+A new strategy parameter has to be added in three places: `DEFAULT_PARAMS` in `simulator.py`, `PARAM_LIMITS` in `webapp.py` (or a dedicated check in `parse_params`, as for `plan` and `stamp_duty`), and the request built in `static/index.html`.
 
 ## Data model (`stocks` database)
 

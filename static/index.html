@@ -34,6 +34,9 @@
   }
   h1 { font-size: 17px; margin: 0; font-weight: 650; }
   h1 span { color: var(--muted); font-weight: 400; font-size: 13px; margin-left: 6px; }
+  .header-actions { display: flex; align-items: center; justify-content: flex-end; gap: 12px; flex-wrap: wrap; }
+  .refresh-msg { color: var(--muted); font-size: 13px; }
+  .refresh-msg.error { color: var(--down); }
   .ranges { display: flex; gap: 4px; }
   .ranges button {
     border: 1px solid var(--border); background: var(--panel); color: var(--text);
@@ -194,13 +197,17 @@
 <body>
 <header>
   <h1>FTSE 100 Charts <span>daily prices in pence</span></h1>
-  <div class="ranges" role="group" aria-label="Date range">
-    <button data-range="1m">1M</button>
-    <button data-range="3m">3M</button>
-    <button data-range="6m">6M</button>
-    <button data-range="1y">1Y</button>
-    <button data-range="5y">5Y</button>
-    <button data-range="max">Max</button>
+  <div class="header-actions">
+    <span id="refresh-msg" class="refresh-msg" role="status"></span>
+    <button class="btn" id="refresh-history" type="button" title="Download every stock's price history, as far back as Yahoo has it">Refresh full history</button>
+    <div class="ranges" role="group" aria-label="Date range">
+      <button data-range="1m">1M</button>
+      <button data-range="3m">3M</button>
+      <button data-range="6m">6M</button>
+      <button data-range="1y">1Y</button>
+      <button data-range="5y">5Y</button>
+      <button data-range="max">Max</button>
+    </div>
   </div>
 </header>
 <div class="layout">
@@ -495,6 +502,52 @@ function setRange(range) {
   clearSim();
   for (const symbol of [...charts.keys()]) removeChart(symbol);
   renderCharts();
+}
+
+function showRefresh(running, message = "", isError = false) {
+  const button = $("#refresh-history");
+  button.disabled = running;
+  button.textContent = running ? "Refreshing…" : "Refresh full history";
+  $("#refresh-msg").textContent = message;
+  $("#refresh-msg").classList.toggle("error", isError);
+}
+
+function refreshOutcome(status) {
+  if (status.status === "failed") return showRefresh(false, `Refresh failed: ${status.error}`, true);
+  if (status.status !== "done") return showRefresh(false, "The refresh stopped before finishing. Try again.", true);
+  const missing = status.missing.length ? `; no data for ${status.missing.join(", ")}` : "";
+  showRefresh(false, `Updated ${status.symbols} stocks: ${status.rows.toLocaleString("en-GB")} days checked, `
+    + `${status.inserted.toLocaleString("en-GB")} new${missing}`, status.missing.length > 0);
+  // Stored prices changed, so cached bars and simulator results are out of date
+  cache.clear();
+  setRange(state.range);
+}
+
+async function watchRefresh() {
+  showRefresh(true, "Downloading full history. This can take a few minutes.");
+  try {
+    for (;;) {
+      const res = await fetch("/api/refresh-history");
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const status = await res.json();
+      if (status.status !== "running") return refreshOutcome(status);
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+    }
+  } catch (err) {
+    showRefresh(false, `Couldn't check the refresh (${err.message}). It may still be running.`, true);
+  }
+}
+
+async function startRefresh() {
+  showRefresh(true, "Starting…");
+  try {
+    const res = await fetch("/api/refresh-history", { method: "POST" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  } catch (err) {
+    showRefresh(false, `Couldn't start the refresh (${err.message})`, true);
+    return;
+  }
+  watchRefresh();
 }
 
 function readParams() {
@@ -856,6 +909,7 @@ document.querySelectorAll(".view-tabs [role=tab]").forEach((tab, i, tabs) => {
 });
 
 document.querySelectorAll(".ranges button").forEach((b) => b.addEventListener("click", () => setRange(b.dataset.range)));
+$("#refresh-history").addEventListener("click", startRefresh);
 $("#search").addEventListener("input", renderList);
 $("#clear").addEventListener("click", () => setSelection([]));
 $("#select-all").addEventListener("click", () => {
@@ -882,6 +936,10 @@ matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
   renderBalances();
   setView(state.view);
   setRange(state.range);
+  // Pick up a refresh started earlier, for example before this page was reloaded
+  fetch("/api/refresh-history").then((res) => res.ok ? res.json() : null)
+    .then((status) => { if (status?.status === "running") watchRefresh(); })
+    .catch(() => {});
 })();
 </script>
 </body>
